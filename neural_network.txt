@@ -1,0 +1,151 @@
+import numpy as np
+import random
+import csv
+
+# xrange is not define so im using range
+
+def sigma(z):
+	return 1.0/(1.0 + np.exp(-z.astype(float)))
+
+def sigma_prime (z):
+	f = sigma(z)
+	return f*(1-f)
+
+def cost_derivative(x,y):
+	return (x - y)
+
+def binary(x):
+	result = 0
+	if x > 0.8: result = 1
+	return result
+
+def convert_num_to_vec(number):
+	vec = [0.0 for i in range(10)]
+	vec[number] = 1.0 
+	return vec
+
+def read_mnist_csv():
+	with open("mnist_test.csv") as csv_file:
+		csv_reader = csv.reader(csv_file, delimiter=',')	
+		data = []
+		next(csv_reader)
+		for row in csv_reader:
+			image = [float(row[x]) for x in range(1, len(row))]
+			answer_number = int(row[0])
+			answer_vector = convert_num_to_vec(answer_number) 
+			data.append((image, answer_vector))
+	return data
+
+class Network(object):
+	
+	def __init__(self, sizes):
+		self.num_layers = len(sizes)
+		self.sizes = sizes
+
+		self.biases = [np.zeros((1,1), dtype=object)] + [np.zeros((x,1), dtype=object) for x in sizes[1:]]
+		self.weights = [np.zeros((1,1), dtype=object)] + [np.zeros((y,x), dtype=object) for x, y in zip(sizes[:-1], sizes[1:])]
+
+		self.activations = [np.zeros((x, 1), dtype=object) for x in sizes]
+		self.weighted_activations = [np.zeros((x, 1), dtype=object) for x in sizes]
+		self.delta = [np.zeros((x, 1), dtype=object) for x in sizes]
+	
+	def feed_foward(self, activation):		
+		self.activations[0] = sigma(np.c_[activation])
+		for layer in range(1, self.num_layers):
+			b = self.biases[layer]
+			w = self.weights[layer]
+			a = self.activations[layer-1]
+
+			self.weighted_activations[layer] = np.dot(w, a) + b
+			self.activations[layer] = sigma(self.weighted_activations[layer])
+
+	def SGD (self, data, epoch, mini_batch_size, eta):
+		self.initialize_parameters()
+		epochs_accuracy = []
+		
+		for count in range(epoch):
+			np.random.shuffle(data)
+			training_data = data[: int(0.6 * len(data))]
+			validation_data = data[int(0.6 * len(data)):]
+			n = len(training_data)
+			
+			np.random.shuffle(training_data)
+			mini_batches = [training_data[start: start + mini_batch_size]
+					for start in range(0, n, mini_batch_size)]
+			
+			for mini_batch in mini_batches:
+				self.train_mini_batch(mini_batch, mini_batch_size, eta)
+			print("EPOCH ", count + 1, ":")
+			epochs_accuracy.append(self.validate(validation_data))
+				
+		print("\n\nBEST RESULT: ", max(epochs_accuracy))
+	
+	def train_mini_batch(self, mini_batch, mini_batch_size, eta):
+		
+		nabla_w = [np.zeros(self.weights[layer].shape, dtype=object) for layer in range(self.num_layers)]
+		nabla_b = [np.zeros(self.biases[layer].shape, dtype=object) for layer in range(self.num_layers)]
+	
+		for signal in mini_batch:
+			self.feed_foward(signal[0])
+			y = np.c_[signal[1]]
+			a = self.activations[-1]
+			z = self.weighted_activations[-1]
+			self.delta[-1] = np.multiply(cost_derivative(a,y), sigma_prime(z))
+			self.backpropagate()
+
+			for layer in range(1, self.num_layers):	
+				nabla_w[layer] += np.dot(self.delta[layer], self.activations[layer-1].transpose())
+				nabla_b[layer] += self.delta[layer]
+				
+		self.weights = self.weights -  np.multiply((eta/mini_batch_size), nabla_w)
+		self.biases = self.biases - np.multiply((eta/mini_batch_size), nabla_b)
+					
+	def backpropagate(self):
+		for layer in reversed(range(self.num_layers - 1)):
+			transpose_weights_matrix = np.transpose(self.weights[layer + 1])
+			delta = self.delta[layer + 1]
+			z = self.weighted_activations[layer]
+			self.delta[layer] = np.multiply(np.dot(transpose_weights_matrix,delta), sigma_prime(z))
+		
+	def export_weights_biases(self):
+		return self.weights, self.biases
+	
+	def validate(self, validation_data):
+		right = 0
+		for signal in validation_data:
+			self.feed_foward(signal[0])
+			y = np.c_[signal[-1]]
+			output = np.argmax(self.activations[-1])
+			number = np.argmax(y)
+			if number == output: right += 1
+			#if output[0] > 0.95: right +=1
+		accuracy = right/len(validation_data)
+		print("\tAccuracy: ", accuracy)
+		return accuracy
+
+	def initialize_parameters(self):
+		self.biases = [np.zeros((1,1))] + [np.random.randn(x,1) for x in self.sizes[1:]]
+		self.weights = [np.zeros((1,1))] + [np.random.randn(y,x) for x, y in zip(self.sizes[:-1], self.sizes[1:])]
+	
+	def initialize_outside_parameters(self, weights, biases):
+		self.weights = weights
+		self.biases = biases
+	
+
+
+if __name__=="__main__":
+	
+	data = read_mnist_csv()
+
+	junior = Network([28*28, 16, 16 ,10])
+	
+	junior.SGD(data, 200, 100, 2)
+
+
+
+
+
+
+
+
+
